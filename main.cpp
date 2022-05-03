@@ -42,7 +42,7 @@ std::string convert_unix_epoch_to_date(time_t unix_epoch)
     struct tm *timeinfo;
     char buffer[80];
  
-    timeinfo = localtime(&unix_epoch);
+    timeinfo = gmtime(&unix_epoch);
  
     strftime(buffer, 80, "%D %T", timeinfo);
     return std::string(buffer);
@@ -188,13 +188,12 @@ int main()
                 goto out1;
             }
             char file_type = '?';
-            if (inode_table.i_mode & EXT2_S_IFDIR) {
-                file_type = 'd';
-            } else if (inode_table.i_mode & EXT2_S_IFREG) {
-                file_type = 'f';
-            } else if (inode_table.i_mode & EXT2_S_IFLNK) {
-                file_type = 's';
-            }
+            // TODO: This checking for mode section seems to work but is Janky.
+            // If we change the last two ifs to an else if, it incorrectly classifies
+            // symbolic links as regular files.
+            if ((inode_table.i_mode & EXT2_S_IFDIR) == EXT2_S_IFDIR) {file_type = 'd';}
+            if ((inode_table.i_mode & EXT2_S_IFREG) == EXT2_S_IFREG) {file_type = 'f';} 
+            if ((inode_table.i_mode & EXT2_S_IFLNK) == EXT2_S_IFLNK) { file_type = 's';}
             if (inode_table.i_mode !=0 && inode_table.i_links_count != 0) {
                 outfile << "INODE," <<
                     (i + 1) << "," << // inode number (decimal)
