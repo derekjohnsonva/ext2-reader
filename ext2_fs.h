@@ -106,9 +106,10 @@ struct ext2_inode {
 	__u32	i_reserved2[2];
 };
 
-#define EXT2_S_IFLNK  0xA000
-#define EXT2_S_IFREG  0x8000
-#define EXT2_S_IFDIR  0x4000
+#define EXT2_I_IFLNK  	  0xA000
+#define EXT2_I_IFREG  	  0x8000
+#define EXT2_I_IFDIR  	  0x4000
+#define EXT2_I_MODE_MASK  0xF000
 
 /*
  * File system states

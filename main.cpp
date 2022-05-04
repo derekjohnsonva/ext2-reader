@@ -7,7 +7,15 @@
 #include "ext2_fs.h"
 
 #define BYTES_PRE_SUPER_BLOCK 1024
-u_int32_t block_size;
+u_int block_size;
+// The amount of bytes that can be stored in the direct block (i.e. first 12)
+u_int size_of_direct_blocks;
+// the amout of bytes that can be stored in the single indirect block (i.e. block 13)
+u_int size_of_single_indirect;
+// the amout of bytes that can be stored in the double indirect block (i.e. block 14)
+u_int size_of_double_indirect;
+// the amout of bytes that can be stored in the triple indirect block (i.e. block 15)
+u_int size_of_triple_indirect;
 
 bool check_istream_state(std::istream *fh)
 {
@@ -22,18 +30,18 @@ bool check_istream_state(std::istream *fh)
     return false;
 }
  
-// Function to convert octal number to decimal
-int octal_to_decimal(int octalNumber)
+// Function to convert decimal number to octal
+int decimal_to_octal(int decimalNumber)
 {
-    int decimalNumber = 0, i = 0, rem;
-    while (octalNumber != 0)
+    int rem, i = 1, octalNumber = 0;
+    while (decimalNumber != 0)
     {
-        rem = octalNumber % 10;
-        octalNumber /= 10;
-        decimalNumber += rem * std::pow(8, i);
-        ++i;
+        rem = decimalNumber % 8;
+        decimalNumber /= 8;
+        octalNumber += rem * i;
+        i *= 10;
     }
-    return decimalNumber;
+    return octalNumber;
 }
 
 
@@ -78,21 +86,17 @@ int main()
     std::ofstream outfile;
     outfile.open("output.csv");
     block_size = 1024 << sb.s_log_block_size;
-    // outfile << "SUPERBLOCK," <<
-    //             sb.s_blocks_count << "," <<
-    //             sb.s_inodes_count << "," <<
-    //             block_size << "," <<
-    //             sb.s_inode_size << "," <<
-    //             sb.s_blocks_per_group << "," <<
-    //             sb.s_inodes_per_group << "," <<
-    //             sb.s_first_ino << std::endl;
+    size_of_direct_blocks = block_size * 12;
+    int block_ids_stored_in_one_block = block_size / sizeof(__u32); // __u32 is the datatype that block numbers are stored in
+    size_of_single_indirect = block_size * block_ids_stored_in_one_block;
+    size_of_double_indirect = size_of_single_indirect * block_ids_stored_in_one_block;
+    size_of_triple_indirect = size_of_double_indirect * block_ids_stored_in_one_block;
     print_superblock(outfile, sb);
 
     // Depending on how many block groups are defined, the Block Group Descriptor
     // table can require multiple blocks of storage.
     int block_group_count = (sb.s_blocks_count + sb.s_blocks_per_group - 1) / sb.s_blocks_per_group;
     // int blocks_for_block_group_descriptor = (sizeof(ext2_group_desc) * block_group_count) / block_size;
-    std::vector<ext2_group_desc> block_group_descriptors;
     for (int i = 0; i < block_group_count; i++)
     {
         int pos = BYTES_PRE_SUPER_BLOCK + sizeof(sb) + (i * sizeof(ext2_group_desc));
@@ -188,17 +192,14 @@ int main()
                 goto out1;
             }
             char file_type = '?';
-            // TODO: This checking for mode section seems to work but is Janky.
-            // If we change the last two ifs to an else if, it incorrectly classifies
-            // symbolic links as regular files.
-            if ((inode_table.i_mode & EXT2_S_IFDIR) == EXT2_S_IFDIR) {file_type = 'd';}
-            if ((inode_table.i_mode & EXT2_S_IFREG) == EXT2_S_IFREG) {file_type = 'f';} 
-            if ((inode_table.i_mode & EXT2_S_IFLNK) == EXT2_S_IFLNK) { file_type = 's';}
+            if ((inode_table.i_mode & EXT2_I_MODE_MASK) == EXT2_I_IFDIR) {file_type = 'd';}
+            else if ((inode_table.i_mode & EXT2_I_MODE_MASK) == EXT2_I_IFREG) {file_type = 'f';} 
+            else if ((inode_table.i_mode & EXT2_I_MODE_MASK) == EXT2_I_IFLNK) { file_type = 's';}
             if (inode_table.i_mode !=0 && inode_table.i_links_count != 0) {
                 outfile << "INODE," <<
                     (i + 1) << "," << // inode number (decimal)
                     file_type << "," <<  // file type ('f' for file, 'd' for directory, 's' for symbolic link, '?" for anything else)
-                    inode_table.i_mode << "," << // TODO: mode (low order 12-bits, octal ... suggested format "%o")
+                    decimal_to_octal(inode_table.i_mode & 0xFFF) << "," << // mode (low order 12-bits, octal ... suggested format "%o")
                     inode_table.i_uid << "," << // owner (decimal)
                     inode_table.i_gid << "," << // group (decimal)
                     inode_table.i_links_count << "," << // link count (decimal)
@@ -238,13 +239,86 @@ int main()
                     }
                 }
                 outfile << std::endl;
+
+                if (file_type == 'd') {
+                    // READ the DIRECTORY ENTRIES
+                    // For each directory I-node, scan every data block.
+                    // For each non-zero data block, print directory information
+                    uint curr_offset = 0;
+                    while (curr_offset < inode_table.i_size)
+                    {
+                        // First, we will go to the first data block for the directory
+                        int block_list_index = curr_offset / block_size; 
+                        // The first 12 data blocks are direct blocks
+                        if (block_list_index >= 12) {break;}
+                        int start_pos = inode_table.i_block[block_list_index] * block_size + (curr_offset % block_size);
+                        fh.seekg(start_pos, std::ios::beg);
+                        if (check_istream_state(&fh)) {
+                            printf("error: could not seek to directory data block\n");
+                            goto out1;
+                        }
+                        // Now, we will read the data block
+                        ext2_dir_entry dir_entry;
+                        fh.read((char *)&dir_entry, sizeof(ext2_dir_entry));
+                        if (check_istream_state(&fh)) {
+                            printf("error: could not read data into directory data block\n");
+                            goto out1;
+                        }
+                        if (dir_entry.inode != 0) {
+                            outfile << "DIRENT," <<
+                                        (i + 1) << "," << // parent inode number (decimal) ... the I-node number of the directory that contains this entry
+                                        curr_offset << "," << // logical byte offset (decimal) of this entry within the directory
+                                        dir_entry.inode << "," << // inode number of the referenced file (decimal)
+                                        dir_entry.rec_len << "," << // entry length (decimal)
+                                        // I am not sure why name_len has to be cast to an int to work.
+                                        (int) dir_entry.name_len << "," << // name length (decimal)
+                                        "'" << dir_entry.name << "'" << std::endl;// name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
+                        }
+                        curr_offset += dir_entry.rec_len;
+                    }
+                }
+
+                // INDIRECT BLOCKS
+                if (file_type == 'd' || file_type == 'f'){
+                    // If the size of the inode entry we are looking at is
+                    if (inode_table.i_block[EXT2_IND_BLOCK] != 0) {
+                        printf("HERE, ind block num = %u \n", inode_table.i_block[EXT2_IND_BLOCK]);
+                        // Read the indirect block
+                        int curr_offset = 0;
+                        while (true) {
+                            int position = inode_table.i_block[EXT2_IND_BLOCK] * block_size + curr_offset;
+                            fh.seekg(position, std::ios::beg);
+                            if (check_istream_state(&fh)) {
+                                printf("error: could not seek to indirect block\n");
+                                goto out1;
+                            }
+                            __u32 block_number;
+                            fh.read((char *)&block_number, sizeof(__u32));
+                            if (check_istream_state(&fh)) {
+                                printf("error: could not read indirect block\n");
+                                goto out1;
+                            }
+                            if (block_number == 0) {
+                                break;
+                            }
+                            outfile << "INDIRECT," <<
+                                       (i + 1) << "," << // I-node number of the owning file (decimal)
+                                        1 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
+                                        "?" << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
+                                        inode_table.i_block[EXT2_IND_BLOCK] << "," <<// block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
+                                        block_number << std::endl; // block number of the referenced block (decimal)
+                            curr_offset += sizeof(__u32);
+                            if (curr_offset >= block_size) {
+                                break;
+                            }
+                        }
+                    }
+                }
+
             }
 
 
         }
-
-
-        block_group_descriptors.push_back(bgd);
     }
 
 out1: 
