@@ -75,3 +75,7 @@ For an inline symbolic link:
 1) logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
 1) block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
 1) block number of the referenced block (decimal)
+
+## TESTING
+TODO: Add tests using the [Catch2](https://github.com/catchorg/Catch2/blob/devel/docs/tutorial.md#top)
+testing library.
