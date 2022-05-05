@@ -57,9 +57,9 @@ std::string convert_unix_epoch_to_date(time_t unix_epoch)
     return std::string(buffer);
 }
 
-void print_superblock(std::ofstream& outfile, ext2_super_block sb)
+void print_superblock(ext2_super_block sb)
 {
-    outfile << "SUPERBLOCK," <<
+    std::cout << "SUPERBLOCK," <<
                 sb.s_blocks_count << "," <<
                 sb.s_inodes_count << "," <<
                 block_size << "," <<
@@ -88,7 +88,7 @@ std::optional<__u32> get_indirect_block(uint ind_block, uint ind_offset, std::fs
 }
 
 bool print_indirect_blocks(uint ind_block_num, int32_t inode, int logical_offset,
-                           std::fstream& fh, std::ofstream& outfile)
+                           std::fstream& fh)
 {
     // Read the indirect block
     uint curr_offset = 0;
@@ -100,7 +100,7 @@ bool print_indirect_blocks(uint ind_block_num, int32_t inode, int logical_offset
             return false;
         }
         if (*block_number != 0) {
-            outfile << "INDIRECT," <<
+            std::cout << "INDIRECT," <<
                     (inode + 1) << "," << // I-node number of the owning file (decimal)
                         1 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
                         logical_offset + curr_offset / sizeof(__u32) << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
@@ -114,7 +114,7 @@ bool print_indirect_blocks(uint ind_block_num, int32_t inode, int logical_offset
 }
 
 bool print_2nd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_offset,
-                               std::fstream& fh, std::ofstream& outfile)
+                               std::fstream& fh)
 {
     // Read the indirect block
     uint curr_offset = 0;
@@ -126,13 +126,13 @@ bool print_2nd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_of
             return false;
         }
         if (*block_number != 0) {
-            outfile << "INDIRECT," <<
+            std::cout << "INDIRECT," <<
                         (inode + 1) << "," << // I-node number of the owning file (decimal)
                         2 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
                         logical_offset + curr_offset / sizeof(__u32) << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
                         ind_block_num << "," <<// block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
                         *block_number << std::endl; // block number of the referenced block (decimal)
-            print_indirect_blocks(*block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh, outfile);
+            print_indirect_blocks(*block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh);
         }
         curr_offset += sizeof(__u32);
         if (curr_offset >= block_size) { break; }
@@ -141,7 +141,7 @@ bool print_2nd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_of
 }
 
 bool print_3rd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_offset,
-                               std::fstream& fh, std::ofstream& outfile)
+                               std::fstream& fh)
 {
     // Read the indirect block
     uint curr_offset = 0;
@@ -153,13 +153,13 @@ bool print_3rd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_of
             return false;
         }
         if (*block_number != 0) {
-            outfile << "INDIRECT," <<
+            std::cout << "INDIRECT," <<
                         (inode + 1) << "," << // I-node number of the owning file (decimal)
                         3 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
                         logical_offset + curr_offset / sizeof(__u32) << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
                         ind_block_num << "," <<// block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
                         *block_number << std::endl; // block number of the referenced block (decimal)
-            print_2nd_indirect_blocks(*block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh, outfile);
+            print_2nd_indirect_blocks(*block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh);
         }
         curr_offset += sizeof(__u32);
         if (curr_offset >= block_size) { break; }
@@ -224,7 +224,7 @@ bool get_all_triple_indirect_blocks(uint ind_block_num, std::vector<__u32>& out_
     return true;
 }
 
-bool print_directory_entries(ext2_inode inode_table, int inode_num, std::fstream& fh, std::ofstream& outfile)
+bool print_directory_entries(ext2_inode inode_table, int inode_num, std::fstream& fh)
 {
     // READ the DIRECTORY ENTRIES
     // For each directory I-node, scan every data block.
@@ -235,15 +235,12 @@ bool print_directory_entries(ext2_inode inode_table, int inode_num, std::fstream
         data_blocks.push_back(inode_table.i_block[i]);
     }
     if (inode_table.i_block[EXT2_IND_BLOCK] != 0){
-        printf("Getting single indirect data\n");
         if (!get_all_indirect_blocks(inode_table.i_block[EXT2_IND_BLOCK], data_blocks, fh)) return false;
     }
     if (inode_table.i_block[EXT2_DIND_BLOCK] != 0){
-        printf("Getting double indirect data\n");
         if (!get_all_indirect_blocks(inode_table.i_block[EXT2_DIND_BLOCK], data_blocks, fh)) return false;
     }
     if (inode_table.i_block[EXT2_TIND_BLOCK] != 0){
-        printf("Getting triple indirect data\n");
         if (!get_all_indirect_blocks(inode_table.i_block[EXT2_TIND_BLOCK], data_blocks, fh)) return false;
     }
 
@@ -267,7 +264,7 @@ bool print_directory_entries(ext2_inode inode_table, int inode_num, std::fstream
             return false;
         }
         if (dir_entry.inode != 0) {
-            outfile << "DIRENT," <<
+            std::cout << "DIRENT," <<
                         (inode_num + 1) << "," << // parent inode number (decimal) ... the I-node number of the directory that contains this entry
                         curr_offset << "," << // logical byte offset (decimal) of this entry within the directory
                         dir_entry.inode << "," << // inode number of the referenced file (decimal)
@@ -275,18 +272,18 @@ bool print_directory_entries(ext2_inode inode_table, int inode_num, std::fstream
                         // I am not sure why name_len has to be cast to an int to work.
                         (int) dir_entry.name_len << ","; // name length (decimal)
             // name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
-            outfile << "'";
+            std::cout << "'";
             for (int ii=0; ii < (int) dir_entry.name_len; ii++) {
-                outfile << dir_entry.name[ii];
+                std::cout << dir_entry.name[ii];
             }
-            outfile << "'" << std::endl;
+            std::cout << "'" << std::endl;
         }
         curr_offset += dir_entry.rec_len;
     }
     return true;
 }
 
-int read_ext2_image(const char *in_file, const char *out_file) {
+int read_ext2_image(const char *in_file) {
     std::fstream fh;
     fh.open(in_file, std::ios::in | std::ios::binary);
     if (!fh.is_open())
@@ -300,15 +297,13 @@ int read_ext2_image(const char *in_file, const char *out_file) {
     fh.read((char *)&sb, sizeof(sb)); // read the data into the superblock
     check_istream_state(&fh);
     // We will write the contents of the superblock to a .csv file
-    std::ofstream outfile;
-    outfile.open(out_file);
     block_size = 1024 << sb.s_log_block_size;
     size_of_direct_blocks = block_size * 12;
     int block_ids_stored_in_one_block = block_size / sizeof(__u32); // __u32 is the datatype that block numbers are stored in
     size_of_single_indirect = block_size * block_ids_stored_in_one_block;
     size_of_double_indirect = size_of_single_indirect * block_ids_stored_in_one_block;
     size_of_triple_indirect = size_of_double_indirect * block_ids_stored_in_one_block;
-    print_superblock(outfile, sb);
+    print_superblock(sb);
 
     // Depending on how many block groups are defined, the Block Group Descriptor
     // table can require multiple blocks of storage.
@@ -320,25 +315,25 @@ int read_ext2_image(const char *in_file, const char *out_file) {
         fh.seekg(pos, std::ios::beg); // move 2048 bytes from the start of the file
         if (check_istream_state(&fh)) {
             printf("error: could not seek to block group descriptor table\n");
-            goto out1;
+            return 1;
         }
         ext2_group_desc bgd;
         fh.read((char *)&bgd, sizeof(bgd));
         if (check_istream_state(&fh)) {
             printf("error: could not read data into block group\n");
-            goto out1;
+            return 1;
         }
         int32_t blocks_in_group = sb.s_blocks_count - (sb.s_blocks_per_group  * i);
         if (blocks_in_group < 0) {
             printf("error: blocks_in_group < 0\n");
-            goto out1;
+            return 1;
         }
         int32_t inodes_in_group = sb.s_inodes_count - (sb.s_inodes_per_group  * i);
         if (inodes_in_group < 0) {
             printf("error: inodes_in_group < 0\n");
-            goto out1;
+            return 1;
         }
-        outfile << "GROUP," << 
+        std::cout << "GROUP," << 
             i << "," <<                                           // group number
             blocks_in_group << "," <<                             // total number of blocks in this group
             inodes_in_group << "," <<                             // total number of i-nodes in this group
@@ -356,18 +351,18 @@ int read_ext2_image(const char *in_file, const char *out_file) {
             fh.seekg(pos, std::ios::beg);
             if (check_istream_state(&fh)) {
                 printf("error: could not seek to block bitmap\n");
-                goto out1;
+                return 1;
             }
             char block_bitmap_byte;
             fh.read(&block_bitmap_byte, 1);
             if (check_istream_state(&fh)) {
                 printf("error: could not read data into block bitmap\n");
-                goto out1;
+                return 1;
             }
             // check if the bit is set
             if ((block_bitmap_byte & (1 << (i % 8))) == 0)
             {
-                outfile << "BFREE," << (i + 1) << std::endl; // TODO: Determine if this `+1` is correct
+                std::cout << "BFREE," << (i + 1) << std::endl; // TODO: Determine if this `+1` is correct
             }
         }
         // iterate over each inode in the block group
@@ -378,18 +373,18 @@ int read_ext2_image(const char *in_file, const char *out_file) {
             fh.seekg(pos, std::ios::beg);
             if (check_istream_state(&fh)) {
                 printf("error: could not seek to inode bitmap\n");
-                goto out1;
+                return 1;
             }
             char inode_bitmap_byte;
             fh.read(&inode_bitmap_byte, 1);
             if (check_istream_state(&fh)) {
                 printf("error: could not read data into inode bitmap\n");
-                goto out1;
+                return 1;
             }
             // check if the bit is set
             if ((inode_bitmap_byte & (1 << (i % 8))) == 0)
             {
-                outfile << "IFREE," << (i + 1) << std::endl; // TODO: Determine if this `+1` is correct
+                std::cout << "IFREE," << (i + 1) << std::endl; // TODO: Determine if this `+1` is correct
             }
         }
 
@@ -400,20 +395,20 @@ int read_ext2_image(const char *in_file, const char *out_file) {
             fh.seekg(pos, std::ios::beg);
             if (check_istream_state(&fh)) {
                 printf("error: could not seek to inode table\n");
-                goto out1;
+                return 1;
             }
             ext2_inode inode_table;
             fh.read((char *)&inode_table, sizeof(inode_table));
             if (check_istream_state(&fh)) {
                 printf("error: could not read data into inode table %i \n",i);
-                goto out1;
+                return 1;
             }
             char file_type = '?';
             if ((inode_table.i_mode & EXT2_I_MODE_MASK) == EXT2_I_IFDIR) {file_type = 'd';}
             else if ((inode_table.i_mode & EXT2_I_MODE_MASK) == EXT2_I_IFREG) {file_type = 'f';} 
             else if ((inode_table.i_mode & EXT2_I_MODE_MASK) == EXT2_I_IFLNK) { file_type = 's';}
             if (inode_table.i_mode !=0 && inode_table.i_links_count != 0) {
-                outfile << "INODE," <<
+                std::cout << "INODE," <<
                     (i + 1) << "," << // inode number (decimal)
                     file_type << "," <<  // file type ('f' for file, 'd' for directory, 's' for symbolic link, '?" for anything else)
                     decimal_to_octal(inode_table.i_mode & 0xFFF) << "," << // mode (low order 12-bits, octal ... suggested format "%o")
@@ -432,7 +427,7 @@ int read_ext2_image(const char *in_file, const char *out_file) {
                 one triple indirect). */
                 if (file_type == 'f' || file_type == 'd') {
                     for (int i = 0; i < 15; i++) {
-                        outfile << "," << inode_table.i_block[i];
+                        std::cout << "," << inode_table.i_block[i];
                     }
                 }
                 /* 
@@ -446,19 +441,19 @@ int read_ext2_image(const char *in_file, const char *out_file) {
                 */
                 if (file_type == 's') {
                     if (inode_table.i_size < 60) {
-                        outfile << "," << inode_table.i_block[0];
+                        std::cout << "," << inode_table.i_block[0];
                     } else {
                         for (int i = 0; i < 15; i++) {
                             if (inode_table.i_block[i] != 0) {
-                                outfile << "," << inode_table.i_block[i];
+                                std::cout << "," << inode_table.i_block[i];
                             }
                         }
                     }
                 }
-                outfile << std::endl;
+                std::cout << std::endl;
 
                 if (file_type == 'd') {
-                    if (!print_directory_entries(inode_table, i, fh, outfile)) goto out1;
+                    if (!print_directory_entries(inode_table, i, fh)) return 1;
                 }
 
                 // INDIRECT BLOCKS
@@ -466,21 +461,21 @@ int read_ext2_image(const char *in_file, const char *out_file) {
                     // Initially, the logical offset will be equal to the number of data blocks
                     int logical_offset = EXT2_NDIR_BLOCKS;
                     if (inode_table.i_block[EXT2_IND_BLOCK] != 0) {
-                        if (!print_indirect_blocks(inode_table.i_block[EXT2_IND_BLOCK], i, logical_offset, fh, outfile)) { goto out1; }
+                        if (!print_indirect_blocks(inode_table.i_block[EXT2_IND_BLOCK], i, logical_offset, fh)) { return 1; }
                     }
                     // update logical offset to be equal the number of data blocks + the
                     // number of block referenced by indirect blocks
                     int blocks_referenced_by_indirect_block = block_size / sizeof(__u32);
                     logical_offset += blocks_referenced_by_indirect_block;
                     if (inode_table.i_block[EXT2_DIND_BLOCK] != 0) {
-                        if (!print_2nd_indirect_blocks(inode_table.i_block[EXT2_DIND_BLOCK], i, logical_offset, fh, outfile)) { goto out1; }
+                        if (!print_2nd_indirect_blocks(inode_table.i_block[EXT2_DIND_BLOCK], i, logical_offset, fh)) { return 1; }
                     }
                     // update logical offset to be equal the number of data blocks + the
                     // number of block referenced by single indirect blocks + the number of
                     // blocks reference by double indirect blocks
                     logical_offset += std::pow(blocks_referenced_by_indirect_block, 2);
                     if (inode_table.i_block[EXT2_TIND_BLOCK] != 0) {
-                        if (!print_3rd_indirect_blocks(inode_table.i_block[EXT2_TIND_BLOCK], i, logical_offset, fh, outfile)) { goto out1; }
+                        if (!print_3rd_indirect_blocks(inode_table.i_block[EXT2_TIND_BLOCK], i, logical_offset, fh)) { return 1; }
                     }
 
                 }
@@ -490,19 +485,15 @@ int read_ext2_image(const char *in_file, const char *out_file) {
 
         }
     }
-
-out1: 
-    outfile.close();
     return 0;
 }
 
-// main method should take two command line arguments, 
-// the first is the path to the image file,
-// and the second is the path to the output file.
+// main method should take one command line argument, 
+// the path to the image file,
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        printf("usage: %s <image file> <output file>\n", argv[0]);
+    if (argc != 2) {
+        printf("usage: %s <image file>\n", argv[0]);
         return 1;
     }
     // check to see that the first command line argument is a .img file
@@ -511,11 +502,5 @@ int main(int argc, char *argv[]) {
         printf("error: %s is not a .img file\n", image_file_name.c_str());
         return 1;
     }
-    // check to see that the second command line argument is a .csv file
-    std::string output_file_name = argv[2];
-    if (output_file_name.substr(output_file_name.size() - 4) != ".csv") {
-        printf("error: %s is not a .csv file\n", output_file_name.c_str());
-        return 1;
-    }
-    return read_ext2_image(argv[1], argv[2]);
+    return read_ext2_image(argv[1]);
 }
