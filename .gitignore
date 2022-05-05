@@ -1,5 +1,6 @@
 p4exp1
 *.json
+*.img
 p4exp1.dSYM/
 *.diff
 *.csv

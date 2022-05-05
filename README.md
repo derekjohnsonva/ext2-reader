@@ -3,7 +3,31 @@
 Will take in a disk image formatted with the [EXT2 filesystem](https://en.wikipedia.org/wiki/Ext2).
 The output will be a `.csv` file with info about the `.img` file.
 
-## superblock summary
+## TO Build
+to build the executable `p4exp1`, run make in the project's root. Uses the `g++` [compiler](https://gcc.gnu.org/)
+
+## To Clean
+run `make clean` command from the project's root.
+
+## Summary of Each File
+The structure of this project is very simple.
+* `main.cpp`: contains all of the code for parsing a EXT2 file system image. 
+The `main` method accepts one command line argumen, the name of the file to parse.
+It then calls the `read_ext2_image` method which performs all of the functionality.
+* `ext2_fs.h`: contains the definitions for the EXT2 data structures (ex. `ext2_inode`). 
+* `Makefile`: A very simple makefile with one target, `p4exp1`.
+* `test.sh`: A script to validate the program. 
+
+## TESTING
+I did not perform any unit testing. In the future I would like to add unit tests.
+TODO: Add tests using the [Catch2](https://github.com/catchorg/Catch2/blob/devel/docs/tutorial.md#top)
+testing library.
+
+All testing was integration testing done with the `test.sh` script.
+
+## Functionality
+
+### superblock summary
 SUPERBLOCK
 1) total number of blocks (decimal)
 1) total number of i-nodes (decimal)
@@ -13,7 +37,7 @@ SUPERBLOCK
 1) i-nodes per group (decimal)
 1) first non-reserved i-node (decimal)
 
-## group summary
+### group summary
 
 1) GROUP
 1) group number (decimal, starting from zero)
@@ -25,12 +49,12 @@ SUPERBLOCK
 1) block number of free i-node bitmap for this group (decimal)
 1) block number of first block of i-nodes in this group (decimal)
 
-## free block entries
+### free block entries
 
 1) BFREE
 1) number of the free block (decimal)
 
-## free I-node entries
+### free I-node entries
 
 1) IFREE
 1) number of the free I-node (decimal)
@@ -57,7 +81,7 @@ For an inline symbolic link:
 13)  print the first four bytes of the name as unsigned int (decimal)
 
 
-## directory entries
+### directory entries
 
 1) DIRENT
 1) parent inode number (decimal) ... the I-node number of the directory that contains this entry
@@ -67,7 +91,7 @@ For an inline symbolic link:
 1) name length (decimal)
 1) name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
 
-## indirect block references
+### indirect block references
 
 1) INDIRECT
 1) I-node number of the owning file (decimal)
@@ -75,7 +99,3 @@ For an inline symbolic link:
 1) logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
 1) block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
 1) block number of the referenced block (decimal)
-
-## TESTING
-TODO: Add tests using the [Catch2](https://github.com/catchorg/Catch2/blob/devel/docs/tutorial.md#top)
-testing library.
