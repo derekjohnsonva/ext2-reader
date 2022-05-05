@@ -4,10 +4,11 @@ CC = g++
 # compiler flags:
 #  -g     - this flag adds debugging information to the executable file
 #  -Wall  - this flag is used to turn on most compiler warnings
-CFLAGS  = -g -Wall -Wextra
+CFLAGS  = -g -Wall -Wextra -std=c++17
 
 # The build target 
 TARGET = p4exp1
+
 
 all: $(TARGET)
 
