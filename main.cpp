@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <optional>
 
 #include "ext2_fs.h"
 
@@ -68,31 +69,43 @@ void print_superblock(std::ofstream& outfile, ext2_super_block sb)
                 sb.s_first_ino << std::endl;
 }
 
+std::optional<__u32> get_indirect_block(uint ind_block, uint ind_offset, std::fstream& fh)
+{
+    int position = ind_block * block_size + ind_offset;
+    fh.seekg(position, std::ios::beg);
+    if (check_istream_state(&fh)) {
+        printf("error: could not seek to indirect block\n");
+        return {};
+    }
+    __u32 block_number;
+    fh.read((char *)&block_number, sizeof(__u32));
+    if (check_istream_state(&fh)) {
+        printf("error: could not read indirect block\n");
+        return {};
+    }
+    return block_number;
+
+}
+
 bool print_indirect_blocks(uint ind_block_num, int32_t inode, int logical_offset,
                            std::fstream& fh, std::ofstream& outfile)
 {
     // Read the indirect block
     uint curr_offset = 0;
     while (true) {
-        int position = ind_block_num * block_size + curr_offset;
-        fh.seekg(position, std::ios::beg);
-        if (check_istream_state(&fh)) {
-            printf("error: could not seek to indirect block\n");
+        auto block_number  = get_indirect_block(ind_block_num, curr_offset, fh);
+        // handle the case where get indirect block returned nothing
+        if (!block_number.has_value()) {
+            printf("Failed on getting data block from single indirect block\n");
             return false;
         }
-        __u32 block_number;
-        fh.read((char *)&block_number, sizeof(__u32));
-        if (check_istream_state(&fh)) {
-            printf("error: could not read indirect block\n");
-            return false;
-        }
-        if (block_number != 0) {
+        if (*block_number != 0) {
             outfile << "INDIRECT," <<
                     (inode + 1) << "," << // I-node number of the owning file (decimal)
                         1 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
                         logical_offset + curr_offset / sizeof(__u32) << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
                         ind_block_num << "," <<// block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
-                        block_number << std::endl; // block number of the referenced block (decimal)
+                        *block_number << std::endl; // block number of the referenced block (decimal)
         }
         curr_offset += sizeof(__u32);
         if (curr_offset >= block_size) { break; }
@@ -106,26 +119,20 @@ bool print_2nd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_of
     // Read the indirect block
     uint curr_offset = 0;
     while (true) {
-        int position = ind_block_num * block_size + curr_offset;
-        fh.seekg(position, std::ios::beg);
-        if (check_istream_state(&fh)) {
-            printf("error: could not seek to double indirect block\n");
+        auto block_number  = get_indirect_block(ind_block_num, curr_offset, fh);
+        // handle the case where get indirect block returned nothing
+        if (!block_number.has_value()) {
+            printf("Failed on getting single indirect block from double indirect block\n");
             return false;
         }
-        __u32 block_number;
-        fh.read((char *)&block_number, sizeof(__u32));
-        if (check_istream_state(&fh)) {
-            printf("error: could not read double indirect block\n");
-            return false;
-        }
-        if (block_number != 0) {
+        if (*block_number != 0) {
             outfile << "INDIRECT," <<
                         (inode + 1) << "," << // I-node number of the owning file (decimal)
                         2 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
                         logical_offset + curr_offset / sizeof(__u32) << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
                         ind_block_num << "," <<// block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
-                        block_number << std::endl; // block number of the referenced block (decimal)
-            print_indirect_blocks(block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh, outfile);
+                        *block_number << std::endl; // block number of the referenced block (decimal)
+            print_indirect_blocks(*block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh, outfile);
         }
         curr_offset += sizeof(__u32);
         if (curr_offset >= block_size) { break; }
@@ -139,29 +146,142 @@ bool print_3rd_indirect_blocks(uint ind_block_num, int32_t inode, int logical_of
     // Read the indirect block
     uint curr_offset = 0;
     while (true) {
-        int position = ind_block_num * block_size + curr_offset;
-        fh.seekg(position, std::ios::beg);
-        if (check_istream_state(&fh)) {
-            printf("error: could not seek to triple indirect block\n");
+        auto block_number  = get_indirect_block(ind_block_num, curr_offset, fh);
+        // handle the case where get indirect block returned nothing
+        if (!block_number.has_value()) {
+            printf("Failed on getting double indirect block from triple indirect block\n");
             return false;
         }
-        __u32 block_number;
-        fh.read((char *)&block_number, sizeof(__u32));
-        if (check_istream_state(&fh)) {
-            printf("error: could not read triple indirect block\n");
-            return false;
-        }
-        if (block_number != 0) {
+        if (*block_number != 0) {
             outfile << "INDIRECT," <<
                         (inode + 1) << "," << // I-node number of the owning file (decimal)
                         3 << "," <<// (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
                         logical_offset + curr_offset / sizeof(__u32) << "," <<// logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
                         ind_block_num << "," <<// block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
-                        block_number << std::endl; // block number of the referenced block (decimal)
-            print_2nd_indirect_blocks(block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh, outfile);
+                        *block_number << std::endl; // block number of the referenced block (decimal)
+            print_2nd_indirect_blocks(*block_number, inode, logical_offset + (curr_offset / sizeof(__u32)), fh, outfile);
         }
         curr_offset += sizeof(__u32);
         if (curr_offset >= block_size) { break; }
+    }
+    return true;
+}
+
+bool get_all_indirect_blocks(uint ind_block_num, std::vector<__u32>& out_vec, std::fstream& fh)
+{
+    // Read the indirect block
+    uint curr_offset = 0;
+    while (curr_offset < block_size) {
+        auto block_number  = get_indirect_block(ind_block_num, curr_offset, fh);
+        // handle the case where get indirect block returned nothing
+        if (!block_number.has_value()) {
+            printf("Failed on getting data block from indirect block\n");
+            return false;
+        }
+        if (*block_number != 0){
+            out_vec.push_back(*block_number);
+        }
+        curr_offset += sizeof(__u32);
+    }
+    return true;
+}
+
+bool get_all_double_indirect_blocks(uint ind_block_num, std::vector<__u32>& out_vec, std::fstream& fh)
+{
+    // Read the indirect block
+    uint curr_offset = 0;
+    while (curr_offset < block_size) {
+        auto block_number  = get_indirect_block(ind_block_num, curr_offset, fh);
+        // handle the case where get indirect block returned nothing
+        if (!block_number.has_value()) {
+            printf("Failed on getting data block from double indirect block\n");
+            return false;
+        }
+        if (*block_number != 0){
+            get_all_indirect_blocks(*block_number, out_vec, fh);
+        }
+        curr_offset += sizeof(__u32);
+    }
+    return true;
+}
+
+bool get_all_triple_indirect_blocks(uint ind_block_num, std::vector<__u32>& out_vec, std::fstream& fh)
+{
+    // Read the indirect block
+    uint curr_offset = 0;
+    while (curr_offset < block_size) {
+        auto block_number  = get_indirect_block(ind_block_num, curr_offset, fh);
+        // handle the case where get indirect block returned nothing
+        if (!block_number.has_value()) {
+            printf("Failed on getting data block from double indirect block\n");
+            return false;
+        }
+        if (*block_number != 0){
+            get_all_double_indirect_blocks(*block_number, out_vec, fh);
+        }
+        curr_offset += sizeof(__u32);
+    }
+    return true;
+}
+
+bool print_directory_entries(ext2_inode inode_table, int inode_num, std::fstream& fh, std::ofstream& outfile)
+{
+    // READ the DIRECTORY ENTRIES
+    // For each directory I-node, scan every data block.
+    // For each non-zero data block, print directory information
+    /* We will start by getting all of the data blocks*/
+    std::vector<__u32> data_blocks;
+    for (int i=0; i < EXT2_NDIR_BLOCKS; i++) {
+        data_blocks.push_back(inode_table.i_block[i]);
+    }
+    if (inode_table.i_block[EXT2_IND_BLOCK] != 0){
+        printf("Getting single indirect data\n");
+        if (!get_all_indirect_blocks(inode_table.i_block[EXT2_IND_BLOCK], data_blocks, fh)) return false;
+    }
+    if (inode_table.i_block[EXT2_DIND_BLOCK] != 0){
+        printf("Getting double indirect data\n");
+        if (!get_all_indirect_blocks(inode_table.i_block[EXT2_DIND_BLOCK], data_blocks, fh)) return false;
+    }
+    if (inode_table.i_block[EXT2_TIND_BLOCK] != 0){
+        printf("Getting triple indirect data\n");
+        if (!get_all_indirect_blocks(inode_table.i_block[EXT2_TIND_BLOCK], data_blocks, fh)) return false;
+    }
+
+    uint curr_offset = 0;
+    while (curr_offset < inode_table.i_size)
+    {
+        // First, we will go to the first data block for the directory
+        int block_list_index = curr_offset / block_size; 
+        // The first 12 data blocks are direct blocks
+        int start_pos = data_blocks.at(block_list_index) * block_size + (curr_offset % block_size);
+        fh.seekg(start_pos, std::ios::beg);
+        if (check_istream_state(&fh)) {
+            printf("error: could not seek to directory data block\n");
+            return false;
+        }
+        // Now, we will read the data block
+        ext2_dir_entry dir_entry;
+        fh.read((char *)&dir_entry, sizeof(ext2_dir_entry));
+        if (check_istream_state(&fh)) {
+            printf("error: could not read data into directory data block\n");
+            return false;
+        }
+        if (dir_entry.inode != 0) {
+            outfile << "DIRENT," <<
+                        (inode_num + 1) << "," << // parent inode number (decimal) ... the I-node number of the directory that contains this entry
+                        curr_offset << "," << // logical byte offset (decimal) of this entry within the directory
+                        dir_entry.inode << "," << // inode number of the referenced file (decimal)
+                        dir_entry.rec_len << "," << // entry length (decimal)
+                        // I am not sure why name_len has to be cast to an int to work.
+                        (int) dir_entry.name_len << ","; // name length (decimal)
+            // name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
+            outfile << "'";
+            for (int ii=0; ii < (int) dir_entry.name_len; ii++) {
+                outfile << dir_entry.name[ii];
+            }
+            outfile << "'" << std::endl;
+        }
+        curr_offset += dir_entry.rec_len;
     }
     return true;
 }
@@ -338,46 +458,7 @@ int read_ext2_image(const char *in_file, const char *out_file) {
                 outfile << std::endl;
 
                 if (file_type == 'd') {
-                    // READ the DIRECTORY ENTRIES
-                    // For each directory I-node, scan every data block.
-                    // For each non-zero data block, print directory information
-                    uint curr_offset = 0;
-                    while (curr_offset < inode_table.i_size)
-                    {
-                        // First, we will go to the first data block for the directory
-                        int block_list_index = curr_offset / block_size; 
-                        // The first 12 data blocks are direct blocks
-                        if (block_list_index >= 12) {break;}
-                        int start_pos = inode_table.i_block[block_list_index] * block_size + (curr_offset % block_size);
-                        fh.seekg(start_pos, std::ios::beg);
-                        if (check_istream_state(&fh)) {
-                            printf("error: could not seek to directory data block\n");
-                            goto out1;
-                        }
-                        // Now, we will read the data block
-                        ext2_dir_entry dir_entry;
-                        fh.read((char *)&dir_entry, sizeof(ext2_dir_entry));
-                        if (check_istream_state(&fh)) {
-                            printf("error: could not read data into directory data block\n");
-                            goto out1;
-                        }
-                        if (dir_entry.inode != 0) {
-                            outfile << "DIRENT," <<
-                                        (i + 1) << "," << // parent inode number (decimal) ... the I-node number of the directory that contains this entry
-                                        curr_offset << "," << // logical byte offset (decimal) of this entry within the directory
-                                        dir_entry.inode << "," << // inode number of the referenced file (decimal)
-                                        dir_entry.rec_len << "," << // entry length (decimal)
-                                        // I am not sure why name_len has to be cast to an int to work.
-                                        (int) dir_entry.name_len << "," << // name length (decimal)
-                                        "'";
-                            // name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
-                            for (int ii=0; ii < (int) dir_entry.name_len; ii++) {
-                                outfile << dir_entry.name[ii];
-                            }
-                            outfile << "'" << std::endl;
-                        }
-                        curr_offset += dir_entry.rec_len;
-                    }
+                    if (!print_directory_entries(inode_table, i, fh, outfile)) goto out1;
                 }
 
                 // INDIRECT BLOCKS
