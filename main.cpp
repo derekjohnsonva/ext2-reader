@@ -369,7 +369,12 @@ int read_ext2_image(const char *in_file, const char *out_file) {
                                         dir_entry.rec_len << "," << // entry length (decimal)
                                         // I am not sure why name_len has to be cast to an int to work.
                                         (int) dir_entry.name_len << "," << // name length (decimal)
-                                        "'" << dir_entry.name << "'" << std::endl;// name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
+                                        "'";
+                            // name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
+                            for (int ii=0; ii < (int) dir_entry.name_len; ii++) {
+                                outfile << dir_entry.name[ii];
+                            }
+                            outfile << "'" << std::endl;
                         }
                         curr_offset += dir_entry.rec_len;
                     }
