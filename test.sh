@@ -17,6 +17,7 @@ if [ ! -f $2 ]; then
 fi
 
 # compare the output `test.csv` with the second argument
-diff <(sort $2) <(sort test.csv) > diff.txt
+diff <(sort $2) <(sort test.csv)
+
 # remove the temporary file
 rm test.csv

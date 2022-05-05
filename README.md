@@ -3,7 +3,7 @@
 Will take in a disk image formatted with the [EXT2 filesystem](https://en.wikipedia.org/wiki/Ext2).
 The output will be a `.csv` file with info about the `.img` file.
 
-## TO Build
+## To Build
 to build the executable `p4exp1`, run make in the project's root. Uses the `g++` [compiler](https://gcc.gnu.org/)
 
 ## To Clean
@@ -16,7 +16,8 @@ The `main` method accepts one command line argumen, the name of the file to pars
 It then calls the `read_ext2_image` method which performs all of the functionality.
 * `ext2_fs.h`: contains the definitions for the EXT2 data structures (ex. `ext2_inode`). 
 * `Makefile`: A very simple makefile with one target, `p4exp1`.
-* `test.sh`: A script to validate the program. 
+* `test.sh`: A script to validate the program.
+* `testing_data`: a folder that contains `trivial.csv` and `trivial.img`. These two files can be used for testing
 
 ## TESTING
 I did not perform any unit testing. In the future I would like to add unit tests.
@@ -24,6 +25,13 @@ TODO: Add tests using the [Catch2](https://github.com/catchorg/Catch2/blob/devel
 testing library.
 
 All testing was integration testing done with the `test.sh` script.
+To use this script, run it with two arguments. The first is the EXT2 image you want to dump
+The second is a `.csv` file with the output you expect from the EXT2 reader.
+The script will...
+1) build the executable
+2) Run the executable on the first argument (a `.img` file)
+3) Compare the output of running the executable to the second argument (expected output). 
+The comparison is done after a call to sort on both files being compared.
 
 ## Functionality
 
